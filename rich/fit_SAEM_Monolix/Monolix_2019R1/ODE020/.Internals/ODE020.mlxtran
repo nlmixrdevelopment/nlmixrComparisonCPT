@@ -1,0 +1,60 @@
+<DATAFILE>
+
+[FILEINFO]
+file = '../../INFUSION_1CPTMM_SD.csv'
+delimiter = comma
+header = {ID, TIME, DV, LNDV, MDV, AMT, RATE, EVID, DOSE, V, VM, KM, SD, CMT}
+
+[CONTENT]
+ID = {use=identifier}
+TIME = {use=time}
+DV = {use=observation, name=DV, type=continuous}
+MDV = {use=missingdependentvariable}
+AMT = {use=amount}
+RATE = {use=rate}
+EVID = {use=eventidentifier}
+
+<MODEL>
+
+[INDIVIDUAL]
+input = {logV_pop, omega_logV, logVm_pop, omega_logVm, logKm_pop, omega_logKm}
+
+DEFINITION:
+logV = {distribution=normal, typical=logV_pop, sd=omega_logV}
+logVm = {distribution=normal, typical=logVm_pop, sd=omega_logVm}
+logKm = {distribution=normal, typical=logKm_pop, sd=omega_logKm}
+
+[LONGITUDINAL]
+input = {b}
+
+file = '../../../../../../../ProgramData/Lixoft/MonolixSuite2018R2/factory/library/Users/infusion_1cpt_logVlogVmlogKm.txt'
+
+DEFINITION:
+DV = {distribution=normal, prediction=Cc, errorModel=proportional(b)}
+
+<FIT>
+data = DV
+model = DV
+
+<PARAMETER>
+b = {value=0.3, method=MLE}
+logKm_pop = {value=5.7, method=MLE}
+logV_pop = {value=4.5, method=MLE}
+logVm_pop = {value=7, method=MLE}
+omega_logKm = {value=0.1, method=MLE}
+omega_logV = {value=0.1, method=MLE}
+omega_logVm = {value=0.1, method=MLE}
+
+<MONOLIX>
+
+[TASKS]
+populationParameters()
+individualParameters(method = {conditionalMean, conditionalMode })
+fim(method = StochasticApproximation)
+logLikelihood(method = ImportanceSampling)
+plotResult(method = {outputplot, indfits, obspred, parameterdistribution, covariatemodeldiagnosis, randomeffects, covariancemodeldiagnosis, saemresults })
+
+[SETTINGS]
+GLOBAL:
+exportpath = '../'
+

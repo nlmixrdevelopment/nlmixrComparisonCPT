@@ -1,0 +1,101 @@
+********************************************************************************
+*                           ODE029.mlxtran                                     *
+*                           May 17, 2019 at 13:48:38                           *
+*                           Monolix version : 5.1.0                            *
+********************************************************************************
+
+
+POPULATION PARAMETERS ESTIMATION _______________________________________________
+
+Fixed Effects ----------------------------     se_sa    rse(%)
+logka_pop                      :   0.00628    0.0319       508
+logV_pop                       :      4.23    0.0275      0.65
+logVm_pop                      :      6.95    0.0318     0.457
+logKm_pop                      :       5.6    0.0472     0.842
+
+Standard Deviation of the Random Effects -
+omega_logka                    :      0.31    0.0247      7.97
+omega_logV                     :     0.293    0.0199      6.78
+omega_logVm                    :     0.281    0.0251      8.95
+omega_logKm                    :      0.36    0.0382      10.6
+
+Error Model Parameters -------------------
+b                              :     0.192   0.00319      1.66
+
+Elapsed time (seconds) :       69
+
+ _______________________________________________________________________________
+
+
+
+CORRELATION MATRIX OF THE ESTIMATES ____________________________________________
+
+
+Fisher by Stochastic Approximation ---------------------------------------------
+Correlation Matrix :
+  logka_pop         1
+   logV_pop  0.069757         1
+  logVm_pop -0.033462 -0.028589         1
+  logKm_pop -0.034516 -0.031387   0.37567         1
+omega_logka  0.029651-0.0039699-0.0054497-0.0043477         1
+ omega_logV 0.0058979 0.0050357  0.007538  0.014687 -0.014805         1
+omega_logVm  0.010471 0.0060427  -0.14138 -0.073132 -0.016963  0.001711         1
+omega_logKm  0.027812   0.01409    0.1842   0.12386 0.0014673  0.014021  -0.12331         1
+          b 0.0088678  0.035646  0.011027 -0.010425 -0.036139  -0.00414 -0.029845 0.0026938         1
+                               min       max   max/min
+Eigen values           :      0.61       1.5       2.5
+
+Elapsed time (seconds) :     0.5
+
+ -------------------------------------------------------------------------------
+
+ _______________________________________________________________________________
+
+
+
+INDIVIDUAL PARAMETERS ESTIMATION _______________________________________________
+
+
+Individual Parameters Estimation by Conditional Mean ---------------------------
+              min        Q1    median        Q3       max
+logka :    -0.587    -0.184   0.00445     0.195       0.6
+logV  :      3.55      3.98      4.24      4.46      4.85
+logVm :      6.34       6.8      6.97       7.1      7.47
+logKm :      4.97      5.48      5.61      5.71      6.29
+
+Elapsed time (seconds) :  1.2e+2
+
+ -------------------------------------------------------------------------------
+
+
+Individual Parameters Estimation by Conditional Mode ---------------------------
+              min        Q1    median        Q3       max
+logka :    -0.609    -0.205   0.00169     0.163     0.579
+logV  :      3.54      3.98      4.24      4.46      4.84
+logVm :      6.36      6.82      6.95      7.09      7.38
+logKm :      4.91      5.45       5.6       5.7      6.27
+
+Elapsed time (seconds) :     1.3
+
+ -------------------------------------------------------------------------------
+
+ _______________________________________________________________________________
+
+
+
+LOG-LIKELIHOOD ESTIMATION ______________________________________________________
+                                                            (is)
+
+-2 x log-likelihood                             :       24072.59
+Akaike Information Criteria               (AIC) :       24090.59
+Corrected Bayesian Information Criteria  (BICc) :       24130.40
+Bayesian Information Criteria             (BIC) :       24115.68
+
+Elapsed time                          (seconds) :          99.94
+
+
+[Importance Sampling] Standard error        : 0.598
+                      Sampling distribution : T-distribution with 5 degrees of freedom
+
+ _______________________________________________________________________________
+

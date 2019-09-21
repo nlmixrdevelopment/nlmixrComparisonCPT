@@ -1,0 +1,95 @@
+********************************************************************************
+*                           ODE020.mlxtran                                     *
+*                           May 17, 2019 at 12:10:21                           *
+*                           Monolix version : 5.1.0                            *
+********************************************************************************
+
+
+POPULATION PARAMETERS ESTIMATION _______________________________________________
+
+Fixed Effects ----------------------------     se_sa    rse(%)
+logV_pop                       :      4.25    0.0283     0.664
+logVm_pop                      :      6.97    0.0329     0.472
+logKm_pop                      :      5.62    0.0524     0.933
+
+Standard Deviation of the Random Effects -
+omega_logV                     :     0.305    0.0203      6.65
+omega_logVm                    :     0.294     0.027      9.18
+omega_logKm                    :     0.289    0.0393      13.6
+
+Error Model Parameters -------------------
+b                              :       0.2   0.00322      1.61
+
+Elapsed time (seconds) :       21
+
+ _______________________________________________________________________________
+
+
+
+CORRELATION MATRIX OF THE ESTIMATES ____________________________________________
+
+
+Fisher by Stochastic Approximation ---------------------------------------------
+Correlation Matrix :
+   logV_pop         1
+  logVm_pop -0.020928         1
+  logKm_pop -0.020621    0.4201         1
+ omega_logV -0.013811 0.0023458  0.013141         1
+omega_logVm  0.016744  -0.13713  -0.23952-0.0015532         1
+omega_logKm -0.012406   0.24252   0.49476  0.006639  -0.22171         1
+          b  0.036731   0.02067 0.0064291-0.0014939 -0.019486 -0.012157         1
+                               min       max   max/min
+Eigen values           :      0.46       1.9       4.2
+
+Elapsed time (seconds) :    0.31
+
+ -------------------------------------------------------------------------------
+
+ _______________________________________________________________________________
+
+
+
+INDIVIDUAL PARAMETERS ESTIMATION _______________________________________________
+
+
+Individual Parameters Estimation by Conditional Mean ---------------------------
+              min        Q1    median        Q3       max
+logV  :      3.69      4.03      4.25      4.42       5.1
+logVm :      6.44      6.78      6.96      7.11      7.77
+logKm :      5.12      5.55      5.63      5.72      5.85
+
+Elapsed time (seconds) :      12
+
+ -------------------------------------------------------------------------------
+
+
+Individual Parameters Estimation by Conditional Mode ---------------------------
+              min        Q1    median        Q3       max
+logV  :      3.68      4.03      4.24      4.41      5.09
+logVm :      6.46      6.79      6.96      7.13      7.73
+logKm :      5.07      5.55      5.62       5.7      5.88
+
+Elapsed time (seconds) :    0.44
+
+ -------------------------------------------------------------------------------
+
+ _______________________________________________________________________________
+
+
+
+LOG-LIKELIHOOD ESTIMATION ______________________________________________________
+                                                            (is)
+
+-2 x log-likelihood                             :       26040.89
+Akaike Information Criteria               (AIC) :       26054.89
+Corrected Bayesian Information Criteria  (BICc) :       26086.17
+Bayesian Information Criteria             (BIC) :       26074.40
+
+Elapsed time                          (seconds) :          47.91
+
+
+[Importance Sampling] Standard error        : 0.484
+                      Sampling distribution : T-distribution with 5 degrees of freedom
+
+ _______________________________________________________________________________
+

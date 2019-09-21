@@ -1,0 +1,4 @@
+eta,statistics,p-value
+eta_logV,0.987243,0.383192
+eta_logVm,0.986931,0.429205
+eta_logKm,0.990754,0.89836

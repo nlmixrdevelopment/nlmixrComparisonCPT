@@ -1,0 +1,5 @@
+parameter,statistics,p-value,test
+logCl,0.9876,0.530805,Shapiro-Wilk
+logV1,0.98923,0.731617,Shapiro-Wilk
+logQ,0.985668,0.269454,Shapiro-Wilk
+logV2,0.983982,0.247983,Shapiro-Wilk

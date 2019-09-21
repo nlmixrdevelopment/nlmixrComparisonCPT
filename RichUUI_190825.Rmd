@@ -1,0 +1,1292 @@
+---
+title: "Rich data analysis with nlmixr"
+author: "Rik Schoemaker"
+date: "25 August 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval=FALSE)
+knitr::opts_chunk$set(fig.pos = 'H')
+```
+
+## Examination of nlmixr estimation algorithm properties for richly sampled data and multiple models
+
+The nlmixr/SAEM, and nlmixr/FOCEI parameter estimation algorithms were compared with Monolix/SAEM and NONMEM/FOCEI in a richly-sampled data setting with multiple models. 
+
+Richly sampled profiles were simulated for 4 different dose levels of 30 subjects each, for a range of test models with:
+.	one- or two-compartmental disposition
+.	oral (first-order absorption), intravenous (IV) bolus, or IV infusion administration
+.	linear or Michaelis-Menten (MM) clearance. 
+In addition, three dosing and sampling scenarios were investigated: 
+.	a single administration with 19 samples over 72 hours
+.	seven repeated daily administrations, with 15 samples over 24 hours after the 4th dose, 19 samples over 72 hours after the 7th dose, and 5 trough samples
+.	the single administration profile followed by the repeated administrations profile, with a total of 58 samples over 12 days
+These combinations provided a total of 36 test cases. Inter-individual variability was applied to all pharmacokinetic parameters, and all IIVs were set to 30% (implemented as a diagonal matrix with no covariances). Proportional residual variability was set to 20%. All one-compartment models had a population Vc of 70 L, and all two-compartment models had an additional peripheral volume (Vp) of 40 L. For all oral absorption models, ka was set to 1.0 h-1. All models with linear elimination had a CL of 4.0 L/h, and for all models with non-linear MM elimination, CL was replaced with a Km of 250 mg/L and a Vmax of 1000 mg/h. All two-compartment models had inter-compartmental clearance (Q) set to 4.0 L/h. 
+
+The code for the full analysis is provided here along with some output graphs to demonstrate the results. 
+
+Prior to installing nlmixr, both Rtools and Python need to be installed. Uninstall any existing version of Rtools. Rtools35.exe can be downloaded from http://cran.r-project.org/bin/windows/Rtools/. Install by double-clicking the file and following the prompts. Remove the 32 bit toolchain option. During the installation process, in the “Select additional tasks” window, check the box for Add rtools to the system path, and make sure that the path contains the following items:
+
+```{}
+C:\Rtools\bin;
+C:\Rtools\mingw_64\bin;
+C:\Program Files\R\R-3.5.3\bin\x64\;
+```
+
+so add items that are not already there, and update if necessary.
+
+Python is required for for additional computations in RxODE and nlmixr. Download the latest 64-bit version (3.7.3 at the time of writing) from https://www.python.org/downloads/windows/, scroll down to select the ‘Windows x86-64 executable installer’ and run the installer. Be sure to check-mark 'Add Python 3.7 to PATH, and the use the 'Install Now' option to have Python reside in users/name/AppData to avoid write permissions needed during additional setup.
+
+These analyses were performed using the RxODE version (0.9.1-3 of 6 August 2019) and nlmixr version (1.1.1-1 of 23 August 2019) from CRAN that can be installed using:
+
+```{r installation2}
+install.packages("RxODE")
+install.packages("nlmixr")
+```
+
+followed by running:
+
+```{r Python link}  
+rxWinPythonSetup()
+```
+
+
+Alternatively, the latest version of nlmixr from GitHub can be installed with the following code:
+
+```{r installation}
+library(devtools)
+install_github("nlmixrdevelopment/RxODE")
+install_github("nlmixrdevelopment/nlmixr")
+```
+
+
+Load the packages and run all the FOCEI and SAEM analysis with models defined using ODEs:
+
+```{r ode_models}
+
+library(nlmixr)
+library(data.table)
+
+one.compartment.IV.model <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+          # Simple numeric expressions are supported
+        lCl <- 1.6      #log Cl (L/hr)   
+        lVc <- 4.5      #log V (L)   
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Vc ~ 0.1   #IIV V
+        eta.Cl ~ 0.1   #IIV Cl
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        Vc <- exp(lVc + eta.Vc)
+        Cl <- exp(lCl + eta.Cl)
+        # RxODE-style differential equations are supported
+        d / dt(centr) = -(Cl / Vc) * centr;
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+datr <- fread("BOLUS_1CPT.csv")
+
+runno<-"N001"
+data<-datr[SD==1]
+rxClean()
+fit <- nlmixr(one.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N002"
+data<-datr[SD==0]
+fit <- nlmixr(one.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N004"
+data<-datr
+fit <- nlmixr(one.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+datr <- fread("Infusion_1CPT.csv")
+
+rxClean()
+runno<-"N012"
+data<-datr[SD==1]
+fit <- nlmixr(one.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N013"
+data<-datr[SD==0]
+fit <- nlmixr(one.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N015"
+data<-datr
+fit <- nlmixr(one.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+
+one.compartment.IV.MM.model <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+        lVM <- 7      #log Vmax (mg/hr)   
+        lKM <- 5.7    #log KM (mg/L)   
+        lVc <- 4.5    #log V (L)   
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Vc ~ 0.15 
+        eta.VM ~ 0.15
+        eta.KM ~ 0.15
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        Vc <- exp(lVc + eta.Vc)
+        VM <- exp(lVM + eta.VM)
+        KM <- exp(lKM + eta.KM)
+        # RxODE-style differential equations are supported
+        d/dt(centr)  = -(VM*centr/Vc)/(KM+centr/Vc);
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+datr <- fread("BOLUS_1CPTMM.csv")
+
+rxClean()
+runno<-"N009"
+data<-datr[SD==1]
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+#Modified starting values in the NONMEM analysis:
+one.compartment.IV.MM.model2 <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+        lVM <- 6.9    #log Vmax (mg/hr)   
+        lKM <- 5.8    #log KM (mg/L)   
+        lVc <- 4.2    #log V (L)   
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.2 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Vc ~ 0.1 
+        eta.VM ~ 0.14
+        eta.KM ~ 0.1
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        Vc <- exp(lVc + eta.Vc)
+        VM <- exp(lVM + eta.VM)
+        KM <- exp(lKM + eta.KM)
+        # RxODE-style differential equations are supported
+        d/dt(centr)  = -(VM*centr/Vc)/(KM+centr/Vc);
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+rxClean()
+runno<-"N010"
+data<-datr[SD==0]
+fit <- nlmixr(one.compartment.IV.MM.model2,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.MM.model2,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N011"
+data<-datr
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+datr <- fread("Infusion_1CPTMM.csv")
+
+rxClean()
+runno<-"N020"
+data<-datr[SD==1]
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N021"
+data<-datr[SD==0]
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N022"
+data<-datr
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.IV.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+one.compartment.oral.model <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+          # Simple numeric expressions are supported
+        lCl <- 1.8      #log Cl (L/hr)   
+        lVc <- 4.7      #log V (L)   
+        lKA <- 0.2      #log V (L)   
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Cl ~ 0.15
+        eta.Vc ~ 0.15  
+        eta.KA ~ 0.15
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        Cl <- exp(lCl + eta.Cl)
+        Vc <- exp(lVc + eta.Vc)
+        KA <- exp(lKA + eta.KA)
+        # RxODE-style differential equations are supported
+        d/dt(depot)    = -KA*depot;
+        d/dt(centr)  =  KA*depot-(Cl/Vc)*centr;
+        ## Concentration is calculated
+        cp = centr / Vc
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+
+datr <- fread("ORAL_1CPT.csv")
+
+rxClean()
+runno<-"N023"
+data<-datr[SD==1]
+fit <- nlmixr(one.compartment.oral.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.oral.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+one.compartment.oral.model2 <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+          # Simple numeric expressions are supported
+        lCl <- 1.6      #log Cl (L/hr)   
+        lVc <- 4.5      #log V (L)   
+        lKA <- 0.2      #log V (L)   
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Cl ~ 0.15
+        eta.Vc ~ 0.15  
+        eta.KA ~ 0.15
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        Cl <- exp(lCl + eta.Cl)
+        Vc <- exp(lVc + eta.Vc)
+        KA <- exp(lKA + eta.KA)
+        # RxODE-style differential equations are supported
+        d/dt(depot)    = -KA*depot;
+        d/dt(centr)  =  KA*depot-(Cl/Vc)*centr;
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+rxClean()
+runno<-"N024"
+data<-datr[SD==0]
+fit <- nlmixr(one.compartment.oral.model2,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.oral.model2,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N026"
+data<-datr
+fit <- nlmixr(one.compartment.oral.model2,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.oral.model2,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+
+one.compartment.oral.MM.model <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+          # Simple numeric expressions are supported
+        lVM <- 7      #log Vmax (mg/hr)   
+        lKM <- 5.7    #log KM (mg/L)   
+        lVc <- 4.5    #log V (L)   
+        lKA <- 0.2    #log V (L)   
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Vc ~ 0.15   
+        eta.VM ~ 0.15
+        eta.KM ~ 0.15
+        eta.KA ~ 0.15
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        Vc <- exp(lVc + eta.Vc)
+        VM <- exp(lVM + eta.VM)
+        KM <- exp(lKM + eta.KM)
+        KA <- exp(lKA + eta.KA)
+        # RxODE-style differential equations are supported
+        d/dt(depot)    = -KA*depot;
+        d/dt(centr)  =  KA*depot-(VM*centr/Vc)/(KM+centr/Vc);
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+datr <- fread("ORAL_1CPTMM.csv")
+
+
+rxClean()
+runno<-"N029"
+data<-datr[SD==1]
+fit <- nlmixr(one.compartment.oral.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.oral.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N030"
+data<-datr[SD==0]
+fit <- nlmixr(one.compartment.oral.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.oral.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N031"
+data<-datr
+fit <- nlmixr(one.compartment.oral.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(one.compartment.oral.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+
+two.compartment.IV.model <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+          # Simple numeric expressions are supported
+        lCl <- 1.6      #log Cl (L/hr)   
+        lVc <- 4.5      #log Vc (L)   
+        lQ  <- 1.6      #log Q (L/hr)   
+        lVp <- 4        #log Vp (L)   
+
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Vc ~ 0.15   
+        eta.Cl ~ 0.15
+        eta.Vp ~ 0.15  
+        eta.Q  ~ 0.15
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        Vc <- exp(lVc + eta.Vc)
+        Cl <- exp(lCl + eta.Cl)
+        Vp <- exp(lVp + eta.Vp)
+        Q <- exp(lQ + eta.Q)
+        # RxODE-style differential equations are supported
+        K10<- Cl/Vc
+        K12<- Q/Vc
+        K21<- Q/Vp
+        d/dt(centr)  = K21*periph-K12*centr-K10*centr;
+        d/dt(periph) =-K21*periph+K12*centr;
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+
+datr <- fread("BOLUS_2CPT.csv")
+
+
+rxClean()
+runno<-"N032"
+data<-datr[SD==1]
+fit <- nlmixr(two.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N033"
+data<-datr[SD==0]
+fit <- nlmixr(two.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N035"
+data<-datr
+fit <- nlmixr(two.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+
+datr <- fread("Infusion_2CPT.csv")
+
+
+rxClean()
+runno<-"N046"
+data<-datr[SD==1]
+fit <- nlmixr(two.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N047"
+data<-datr[SD==0]
+fit <- nlmixr(two.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N049"
+data<-datr
+fit <- nlmixr(two.compartment.IV.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+
+two.compartment.IV.MM.model <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+          # Simple numeric expressions are supported
+        lVM <- 7.1    #log Vmax (mg/hr)   
+        lKM <- 5.7    #log KM (mg/L)   
+        lVc <- 4.3    #log Vc (L)   
+        lQ  <- 1.5    #log Q (L/hr)   
+        lVp <- 4      #log Vp (L)   
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.VM ~ 0.15
+        eta.KM ~ 0.1
+        eta.Vc ~ 0.15   
+        eta.Q  ~ 0.15
+        eta.Vp ~ 0.15   
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        VM <- exp(lVM + eta.VM)
+        KM <- exp(lKM + eta.KM)
+        Vc <- exp(lVc + eta.Vc)
+        Q  <- exp(lQ  + eta.Q)
+        Vp <- exp(lVp + eta.Vp)
+        # RxODE-style differential equations are supported
+        K12<- Q/Vc
+        K21<- Q/Vp
+        d/dt(centr)  = K21*periph-K12*centr-(VM*centr/Vc)/(KM+centr/Vc);
+        d/dt(periph) =-K21*periph+K12*centr;
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+
+
+datr <- fread("BOLUS_2CPTMM.csv")
+
+rxClean()
+runno<-"N040"
+data<-datr[SD==1]
+fit <- nlmixr(two.compartment.IV.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+two.compartment.IV.MM.model2 <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+          # Simple numeric expressions are supported
+        lVM <- 7      #log Vmax (mg/hr)   
+        lKM <- 5.7    #log KM (mg/L)   
+        lVc <- 4.5    #log Vc (L)   
+        lQ  <- 1.5    #log Q (L/hr)   
+        lVp <- 4      #log Vp (L)   
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.VM ~ 0.15
+        eta.KM ~ 0.15
+        eta.Vc ~ 0.15   
+        eta.Q  ~ 0.15
+        eta.Vp ~ 0.15   
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        VM <- exp(lVM + eta.VM)
+        KM <- exp(lKM + eta.KM)
+        Vc <- exp(lVc + eta.Vc)
+        Q  <- exp(lQ  + eta.Q)
+        Vp <- exp(lVp + eta.Vp)
+        # RxODE-style differential equations are supported
+        K12<- Q/Vc
+        K21<- Q/Vp
+        d/dt(centr)  = K21*periph-K12*centr-(VM*centr/Vc)/(KM+centr/Vc);
+        d/dt(periph) =-K21*periph+K12*centr;
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+rxClean()
+runno<-"N041"
+data<-datr[SD==0]
+fit <- nlmixr(two.compartment.IV.MM.model2,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.MM.model2,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N042"
+data<-datr
+fit <- nlmixr(two.compartment.IV.MM.model2,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.MM.model2,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+datr <- fread("Infusion_2CPTMM.csv")
+
+
+rxClean()
+runno<-"N054"
+data<-datr[SD==1]
+fit <- nlmixr(two.compartment.IV.MM.model2,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.MM.model2,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+two.compartment.IV.MM.model3 <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+          # Simple numeric expressions are supported
+        lVM <- 7      #log Vmax (mg/hr)   
+        lKM <- 5.7    #log KM (mg/L)   
+        lVc <- 4.5    #log Vc (L)   
+        lQ  <- 1.5    #log Q (L/hr)   
+        lVp <- 4      #log Vp (L)   
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.VM ~ 0.1
+        eta.KM ~ 0.1
+        eta.Vc ~ 0.1  
+        eta.Q  ~ 0.1
+        eta.Vp ~ 0.1  
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        VM <- exp(lVM + eta.VM)
+        KM <- exp(lKM + eta.KM)
+        Vc <- exp(lVc + eta.Vc)
+        Q  <- exp(lQ  + eta.Q)
+        Vp <- exp(lVp + eta.Vp)
+        # RxODE-style differential equations are supported
+        K12<- Q/Vc
+        K21<- Q/Vp
+        d/dt(centr)  = K21*periph-K12*centr-(VM*centr/Vc)/(KM+centr/Vc);
+        d/dt(periph) =-K21*periph+K12*centr;
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+rxClean()
+runno<-"N055"
+data<-datr[SD==0]
+fit <- nlmixr(two.compartment.IV.MM.model3,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.MM.model3,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N056"
+data<-datr
+fit <- nlmixr(two.compartment.IV.MM.model2,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.IV.MM.model2,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+
+two.compartment.oral.model <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+        lCl <- 1.6      #log Cl (L/hr)   
+        lVc <- 4.5      #log Vc (L)   
+        lQ  <- 1.6      #log Q (L/hr)   
+        lVp <- 4        #log Vp (L)   
+        lKA <- 0.2      #log V (L)   
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Vc ~ 0.15   
+        eta.Cl ~ 0.15
+        eta.Vp ~ 0.15   
+        eta.Q  ~ 0.15
+        eta.KA ~ 0.15
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        Vc <- exp(lVc + eta.Vc)
+        Cl <- exp(lCl + eta.Cl)
+        Vp <- exp(lVp + eta.Vp)
+        Q  <- exp(lQ + eta.Q)
+        KA <- exp(lKA + eta.KA)
+        # RxODE-style differential equations are supported
+        K10<- Cl/Vc
+        K12<- Q/Vc
+        K21<- Q/Vp
+        d/dt(depot)  = -KA*depot;
+        d/dt(centr)  =  KA*depot+K21*periph-K12*centr-K10*centr;
+        d/dt(periph) =        -K21*periph+K12*centr;
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+
+datr <- fread("ORAL_2CPT.csv")
+
+
+rxClean()
+runno<-"N060"
+data<-datr[SD==1]
+fit <- nlmixr(two.compartment.oral.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.oral.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N061"
+data<-datr[SD==0]
+fit <- nlmixr(two.compartment.oral.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.oral.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N063"
+data<-datr
+fit <- nlmixr(two.compartment.oral.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.oral.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+
+two.compartment.oral.MM.model <- function(){
+    ini({ # Where initial conditions/variables are specified
+          # '<-' or '=' defines population parameters
+        lVM <- 7.1      #log Vmax (mg/hr)   
+        lKM <- 5.7      #log KM (mg/L)   
+        lVc <- 4.5      #log Vc (L)   
+        lQ  <- 1.6      #log Q (L/hr)   
+        lVp <- 4.1      #log Vp (L)   
+        lKA <- 0.22     #log V (L)   
+ 
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- 0.3 
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Vc ~ 0.15   
+        eta.Vp ~ 0.15   
+        eta.VM ~ 0.15
+        eta.KM ~ 0.15
+        eta.Q  ~ 0.15
+        eta.KA ~ 0.15
+    })
+    model({ # Where the model is specified
+        # The model uses the ini-defined variable names
+        Vc <- exp(lVc + eta.Vc)
+        Vp <- exp(lVp + eta.Vp)
+        Q  <- exp(lQ + eta.Q)
+        VM <- exp(lVM + eta.VM)
+        KM <- exp(lKM + eta.KM)
+        KA <- exp(lKA + eta.KA)
+        # RxODE-style differential equations are supported
+        K12<- Q/Vc
+        K21<- Q/Vp
+        d/dt(depot)    = -KA*depot;
+        d/dt(centr)  =  KA*depot+K21*periph-K12*centr-(VM*centr/Vc)/(KM+centr/Vc);
+        d/dt(periph) =        -K21*periph+K12*centr;
+        ## Concentration is calculated
+        cp = centr / Vc;
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+    })
+}
+
+
+datr <- read.csv("ORAL_2CPTMM.csv", header=TRUE,stringsAsFactors=F)
+datr$EVID<-ifelse(datr$EVID==1,101,datr$EVID)
+datr<-data.table(datr)
+
+
+
+rxClean()
+runno<-"N068"
+data<-datr[SD==1]
+fit <- nlmixr(two.compartment.oral.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.oral.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N069"
+data<-datr[SD==0]
+fit <- nlmixr(two.compartment.oral.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.oral.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+runno<-"N070"
+data<-datr
+fit <- nlmixr(two.compartment.oral.MM.model,data,est="saem")
+fit
+save(fit,file=paste("fitSAEM_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+rxClean()
+fit <- nlmixr(two.compartment.oral.MM.model,data,est="focei")
+fit
+save(fit,file=paste("fitFOCEI_ODE_UUI",runno,".Rdata",sep=""))
+fit<-NULL
+
+```
+
+Read in nlmixr results:
+
+```{r read_nlmixr}
+Read_nlmixr<-function(RunNumbers,Analysis,path,stub,out,
+                      tracePLT=FALSE,CovMat=TRUE,printOUT=FALSE){
+
+for (i in RunNumbers) {
+ desc<-paste(Analysis," run",i,sep="")
+ print(i)
+ load(file.path(path,paste(stub,i,".Rdata",sep="")))
+ fit
+
+ if (tracePLT) {traceplot(fit)
+ iG(paste("Traceplot for parameters from",desc))}
+
+ theta<-as.data.frame(fit$par.fixed)
+ theta$Parameter<-rownames(theta)
+
+ if (CovMat==TRUE) {CovMatrix<-fit$covMethod
+   if(is.null(CovMatrix)) {
+     CovMatrix<-"No covariance step"
+     TMSE<-data.frame(value=theta$"Est.",Parameter=rownames(theta),variable="SE",
+                      stringsAsFactors=FALSE)
+     TMSE<-TMSE[!TMSE$Parameter=='prop.err',]
+     TMSE$value<-NA
+   } else {
+    TMSE<-data.frame(value=theta$SE,Parameter=rownames(theta),variable="SE",
+                     stringsAsFactors=FALSE)
+    TMSE<-TMSE[!TMSE$Parameter=='prop.err',]
+   }
+ } else {
+     TMSE<-data.frame(value=theta$"Est.",Parameter=rownames(theta),variable="SE",
+                      stringsAsFactors=FALSE)
+     TMSE<-TMSE[!TMSE$Parameter=='prop.err',]
+     TMSE$value<-NA
+ }
+
+ TM<-data.frame(value=theta$"Est.",Parameter=rownames(theta),variable="Estimate",
+                stringsAsFactors=FALSE)
+ TM$Parameter[TM$Parameter=='prop.err']<-"RSV"
+
+ TM<-rbind(TM,TMSE)
+ Time<-data.frame(Parameter="Time",variable="Estimate",value=sum(fit$time),
+                  stringsAsFactors=FALSE)
+ TM<-rbind(TM,Time)
+ IIV<-data.frame(Parameter=row.names(fit$omega),variable="EtaCV",
+                 value=100*sqrt(diag(fit$omega)),stringsAsFactors=FALSE)
+ TM<-rbind(TM,IIV)
+ OFV<-data.frame(Parameter="OFV",variable="Estimate",value=fit$objDf$OBJF,
+                 stringsAsFactors=FALSE)
+ TM<-rbind(TM,OFV)
+
+  FFP<-function(number,sigdig=3) { 
+    res<-formatC(signif(number,digits=sigdig),
+                 digits=sigdig,format="fg", flag="#") 
+    res<-sub('\\.$',"",res) 
+    res}
+ TM1<-data.frame(
+   Parameter=ifelse(theta$Parameter!="prop.err",as.character(theta$Parameter),
+                    "Proportional error"),
+   Estimate=FFP(as.numeric(theta$"Est."),3),
+   SE=ifelse(theta$Parameter!="prop.err",FFP(as.numeric(theta$SE),3)," "),
+   Backtransformed=ifelse(theta$Parameter!="prop.err",
+     paste(FFP(exp(as.numeric(theta$"Est.")),3),
+     "(",FFP(exp(as.numeric(theta$"Est.")-1.96*as.numeric(theta$SE)),3),
+     "/",FFP(exp(as.numeric(theta$"Est.")+1.96*as.numeric(theta$SE)),3),")",sep=""),
+     FFP(100*(as.numeric(theta$"Est.")),3)),
+     stringsAsFactors=FALSE)
+
+ TM2<-data.frame(Parameter=c(IIV$Parameter,"Time (sec)"),
+                 Estimate=FFP(c(IIV$value,Time$value),3),
+                 SE="",Backtransformed="",stringsAsFactors=FALSE)
+ TM2<-rbind(TM1,TM2)
+ TM2$Parameter[grep("eta.",TM2$Parameter)]<-paste( 
+   TM2$Parameter[grep("eta.",TM2$Parameter)],"(%)")
+ TM2$Parameter<-gsub("eta.", "IIV ", TM2$Parameter)
+ TM2$Parameter<-gsub("^l", "", TM2$Parameter)
+ names(TM2)[names(TM2)=="Backtransformed"]<-"Back-transformed (95%CI)"
+
+ if (printOUT==TRUE){
+   if (CovMat==TRUE) { iT(TM2,paste("Parameters from ",desc,
+      ifelse(CovMatrix=="No covariance step","; no covariance step possible",
+      paste("; SEs estimated with matrix",CovMatrix)),", and OFV = ",
+      round(fit$objDf$OBJF,2),sep=""),RowNames=FALSE)
+   } else { iT(TM2,paste("Parameters from",desc),RowNames=FALSE)}
+ }
+
+ TM$run<-paste("run",i,sep="")
+ TM$analysis<-Analysis
+
+ if (i==RunNumbers[[1]]) {nlmixrpars<<-TM
+ }else{nlmixrpars<<-rbind(nlmixrpars,TM)}
+ assign(out,nlmixrpars,envir = .GlobalEnv)
+ }
+
+}#End Read_nlmixr
+
+
+RunNumbersODE<-Cs(N001,N002,N004,N009,N010,N011,N012,N013,N015,N020,N021,N022,N023,N024,
+                  N026,N029, N030,N031,N032,N033,N035,N040,N041,N042,N046,N047,N049,
+                  N054,N055,N056,N060,N061,N063,N068, N069,N070)
+
+#nlmixr/FOCEI using ODEs: nlminb with sqrt scaling:
+Read_nlmixr(RunNumbers=RunNumbersODE,Analysis="nlmixr/FOCEI",path=".",
+            stub="fitFOCEI_ODE_UUI",
+            out="nlmixrFOCEI_ODE",tracePLT=FALSE,CovMat=TRUE,printOUT=FALSE)
+nlmixrFOCEI_ODE<-data.table(nlmixrFOCEI_ODE)
+
+#SAEM using ODEs:
+Read_nlmixr(RunNumbersODE,Analysis="nlmixr/SAEM",path=".",
+            stub="fitSAEM_ODE_UUI",
+            out="nlmixrSAEM_ODE",tracePLT=FALSE,CovMat=TRUE,printOUT=FALSE)
+nlmixrSAEM_ODE<-data.table(nlmixrSAEM_ODE)
+
+```
+
+Read in NONMEM results:
+
+```{r read_NONMEM}
+Read_NONMEM<-function(RunNumbers,Analysis,path,out,ODE=TRUE,SAEM=FALSE,printOUT=FALSE){
+
+for (i in RunNumbers) {
+ if (ODE==TRUE) {ii<-paste("ODE",substr(i,2,4),sep="")} else {ii<-i}
+ if (SAEM==TRUE) {ii<-paste("SODE",substr(i,2,4),sep="")} else {ii<-ii}
+ desc<-paste(Analysis," run",ii,sep="")
+ print(desc)
+ res<-rnm(ii,pathNM=path,printcorplot=FALSE,Pvalues=FALSE,printW=printOUT)
+ res$Theta$Parameter<-gsub("log ", "l", res$Theta$Parameter)
+ res$Theta$Parameter<-trimws(res$Theta$Parameter)
+ res$Theta$Parameter2<-gsub("^l", "", res$Theta$Parameter)
+
+ TM<-melt(res$Theta[,c("Parameter","Estimate","SE")])
+ Eta<-res$Eta
+ Eta$Parameter<-paste("eta.",res$Theta$Parameter2[1:length(Eta$Eta)],sep="")
+ EM<-melt(Eta[,c("Parameter","EtaCV","SE")])
+ Time<-data.frame(Parameter="Time",variable="Estimate",value=res$RunTime)
+ TM<-rbind(TM,EM,Time)
+ if (SAEM==FALSE){
+   OFV<-data.frame(Parameter="OFV",variable="Estimate",value=res$OFV)
+   TM<-rbind(TM,OFV)
+ }
+
+ TM$run<-paste("run",i,sep="")
+ TM$analysis<-Analysis
+
+ if (i==RunNumbers[[1]]) {NONMEMpars<<-TM
+ }else{NONMEMpars<<-rbind(NONMEMpars,TM)}
+ assign(out,NONMEMpars,envir = .GlobalEnv)
+ }
+
+}#End Read_NONMEM
+
+
+
+RunNumbersODE<-Cs(N001,N002,N004,N009,N010,N011,N012,N013,N015,N020,N021,N022,N023,N024,
+                  N026,N029, N030,N031,N032,N033,N035,N040,N041,N042,N046,N047,N049,
+                  N054,N055,N056,N060,N061,N063,N068, N069,N070)
+
+#NONMEM FOCEi using ODEs:
+Read_NONMEM(RunNumbers=RunNumbersODE,Analysis="NONMEM/FOCEI",
+            path=pathNM,out="NONMEMFOCEI",ODE=TRUE)
+
+```
+
+Read in Monolix results:
+
+```{r read_monolix}
+MONOLIXpars<-fread(file.path(pathMono,"Monolix_ODEs_2019R1.csv"))
+
+MONOLIXpars[,ParameterF:=factor(VAR,
+levels=c(
+"logCl_pop",   "logV_pop",    "omega_logCl", "omega_logV",  "RSV",        
+"RunTime"  ,   "logKm_pop",   "logVm_pop",   "omega_logKm", "omega_logVm",
+"logka_pop",   "omega_logka", "logQ_pop",    "logV1_pop",   "logV2_pop",  
+"omega_logQ",  "omega_logV1", "omega_logV2"),
+labels=c(
+"lCl",   "lVc",    "eta.Cl", "eta.Vc",  "RSV",        
+"Time"  ,   "lKM",   "lVM",   "eta.KM", "eta.VM",
+"lKA",   "eta.KA", "lQ",    "lV",   "lVp",  
+"eta.Q",  "eta.V", "eta.Vp"))]
+MONOLIXpars[,Parameter:=as.character(ParameterF)]
+MONOLIXpars[,Parameter:=ifelse(Parameter=="lV","lVc",Parameter)]
+MONOLIXpars[,Parameter:=ifelse(Parameter=="eta.V","eta.Vc",Parameter)]
+
+MEst<-MONOLIXpars[,.(Parameter,variable="Estimate",value=VAL,
+                     RUN,analysis="MONOLIX/SAEM")]
+MSE<-MONOLIXpars[,.(Parameter,variable="SE",value=SE,
+                    RUN,analysis="MONOLIX/SAEM")]
+
+MONOLIXpars<-rbind(MEst,MSE)
+MONOLIXpars[,run:=gsub("SODE","N",RUN)]
+MONOLIXpars[,variable:=ifelse(Parameter %in% 
+c("eta.Vc","eta.Vp","eta.Cl","eta.Q","eta.VM","eta.KM","eta.KA") & 
+  variable=="Estimate","EtaCV",variable)]
+MONOLIXpars[,value:=ifelse(Parameter %in%    
+c("eta.Vc","eta.Vp","eta.Cl","eta.Q","eta.VM","eta.KM","eta.KA") &
+  variable=="EtaCV",value*100,value)]
+MONOLIXpars[,RUN:=NULL]
+
+```
+
+And then combine all the results:
+
+```{r combine}
+AllResults<-rbind(nlmixrFOCEI_ODE,NONMEMFOCEI,MONOLIXpars,nlmixrSAEM_ODE)
+
+AllResults[,analysis:=factor(analysis,ordered=TRUE)]
+AllResults[,run:=factor(run)]
+
+AllResults[,analysis:=factor(analysis,levels(analysis)[c(4,2,1,3)])]
+
+#pick the numbers from this list to plot the correct SubSet:
+levels(AllResults$analysis)
+#[1] "NONMEM/FOCEI" "nlmixr/FOCEI" "MONOLIX/SAEM" "nlmixr/SAEM"
+
+#To fill up empty combinations with NAs for graphs:
+AllRT<-dcast(AllResults, variable+run+analysis ~ Parameter, value.var = "value")
+AllResults<-melt(AllRT,id.vars=c("variable","run","analysis"),
+                 variable.name = "Parameter")
+AllRT<-dcast(AllResults, Parameter+variable+run ~ analysis, value.var = "value")
+AllResults<-melt(AllRT,id.vars=c("Parameter","variable","run"),
+                 variable.name = "analysis")
+
+AllResults[,BY:=factor(as.numeric(analysis %in% 
+                       c( "MONOLIX/SAEM","nlmixr/SAEM")),
+                       labels=c("FOCEI","SAEM"))]
+```
+
+The nlmixr results can then be compared with the Monolix and NONMEM output and plotted to see the results. The most informative comparison is for the Vc parameter that is available in all 36 models (Figure \ref{fig:fig1}). Results for CL, available in half the models is provide by Figure \ref{fig:fig2}. Run times for the four estimation algorithms are provided in Figure \ref{fig:fig3}
+
+![Results for central volume (Vc) for 36 models with richly-sampled data sets and multiple models and inputs. Model complexity increases from left to right. Population typical parameters (top), their inter individual variability (IIV, middle), and the standard error (SE) of their log estimate (bottom). Horizontal black line: values used in simulation.\label{fig:fig1}](.\\TablesAndFigures\\Rich_VcLong.png)
+
+![Results for clearance (CL) for 36 models with richly-sampled data sets and multiple models and inputs. Model complexity increases from left to right. Population typical parameters (top), their inter individual variability (IIV, middle), and the standard error (SE) of their log estimate (bottom). Horizontal black line: values used in simulation.\label{fig:fig2}](.\\TablesAndFigures\\Rich_CLLong.png)
+
+![Run times on logarithmic scale using single-thread implementation for the four different estimation algorithms (top: FOCEI, bottom: SAEM).\label{fig:fig3}](.\\TablesAndFigures\\RT_nlminbsqrt.png)
+

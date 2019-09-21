@@ -1,0 +1,429 @@
+---
+title: "Sparse data analysis with nlmixr"
+author: "Rik Schoemaker"
+date: "26 August 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval=FALSE)
+knitr::opts_chunk$set(fig.pos = 'H')
+```
+
+## Examination of nlmixr estimation algorithm properties for sparse sample data
+
+The nlmixr/SAEM, and nlmixr/FOCEI parameter estimation algorithms were compared with Monolix/SAEM and NONMEM/FOCEI in a sparse-sampling data setting. To this end, 10,000 patients were simulated after a single dose with doses split between 10, 30, 60 and 120 mg. Four time points were randomly sampled in the 24 hours after the dose. A first order absorption, one compartment distribution, and linear elimination model was used with population values of Clearance=4.0 L/hr, Vc=70 L, and ka=1 /hr, 30% IIV for all three parameters (diagonal omega matrix), and 20% residual variability. Of these 10,000 patients, 120 patients were randomly sampled (stratified by dose, 30 subjects per dose), 500 times using PsN and analysed using NONMEM/FOCEI, Monolix/SAEM, nlmixr/SAEM, and nlmixr/FOCEI.
+
+The code for the full analysis is provided here along with some output graphs to demonstrate the results. While these are interesting in their own right, the code also demonstrates how to perform parallel analysis of the estimations; with 500 datasets per analysis, it is extremely useful to be able to run these analyses side-by-side provided one has access to a computer with multiple cores. As these approaches are OS-dependent, the code below for running in parallel is only applicable to Windows.
+
+Prior to installing nlmixr, both Rtools and Python need to be installed. Uninstall any existing version of Rtools. Rtools35.exe can be downloaded from http://cran.r-project.org/bin/windows/Rtools/. Install by double-clicking the file and following the prompts. Remove the 32 bit toolchain option. During the installation process, in the “Select additional tasks” window, check the box for Add rtools to the system path, and make sure that the path contains the following items:
+
+```{}
+C:\Rtools\bin;
+C:\Rtools\mingw_64\bin;
+C:\Program Files\R\R-3.5.3\bin\x64\;
+```
+
+so add items that are not already there, and update if necessary.
+
+Python is required for for additional computations in RxODE and nlmixr. Download the latest 64-bit version (3.7.3 at the time of writing) from https://www.python.org/downloads/windows/, scroll down to select the ‘Windows x86-64 executable installer’ and run the installer. Be sure to check-mark 'Add Python 3.7 to PATH, and the use the 'Install Now' option to have Python reside in users/name/AppData to avoid write permissions needed during additional setup.
+
+These analyses were performed using the RxODE version (0.9.1-3 of 6 August 2019) and nlmixr version (1.1.1-1 of 23 August 2019) from CRAN that can be installed using:
+
+```{r installation2}
+install.packages("RxODE")
+install.packages("nlmixr")
+```
+
+followed by running:
+
+```{r Python link}  
+rxWinPythonSetup()
+```
+
+
+Alternatively, the latest version of nlmixr from GitHub can be installed with the following code:
+
+```{r installation}
+library(devtools)
+install_github("nlmixrdevelopment/RxODE")
+install_github("nlmixrdevelopment/nlmixr")
+```
+
+Load the packages and define the simulation model using ODEs:
+
+```{r ode_definition}
+library(nlmixr)
+library(data.table)
+
+#Define the RxODE model
+  ode1 <- "
+  d/dt(abs)    = -KA*abs;
+  d/dt(centr)  =  KA*abs-(CL/V)*centr;
+  C2=centr/V;
+  "
+  
+#Create the RxODE simulation object
+  mod1 <- RxODE(model = ode1)
+```
+
+Generate the 10,000 sampled parameters:
+
+```{r sample_parameters}
+#Population parameter values on log-scale
+  paramsl <- c(CL = log(4),
+               V = log(70),
+               KA = log(1))
+#make 10,000 subjects to sample from:
+  nsubg <- 2500 # subjects per dose
+  doses <- c(10, 30, 60, 120)
+  nsub <- nsubg * length(doses)
+#IIV of 30% for each parameter
+  omega <- diag(c(0.09, 0.09, 0.09))# IIV covariance matrix
+  sigma <- 0.2
+#Sample from the multivariate normal
+  set.seed(98176247)
+  library(MASS)
+  mv <-
+    mvrnorm(nsub, rep(0, dim(omega)[1]), omega) # Sample from covariance matrix
+#Combine population parameters with IIV
+  params.all <-
+    data.table(
+      "ID" = seq(1:nsub),
+      "CL" = exp(paramsl['CL'] + mv[, 1]),
+      "V" = exp(paramsl['V'] + mv[, 2]),
+      "KA" = exp(paramsl['KA'] + mv[, 3])
+    )
+#set the doses (looping through the 4 doses)
+  params.all[, AMT := 1000 * doses]
+```
+
+Then do the simulation of all these profiles. Using lapply is super efficient; the initial code with a for loop as suggested in the RxODE tutorial paper is about 20 times slower:
+
+```{r Simulate_profiles}
+Startlapply <- Sys.time()
+  
+#Run the simulations using lapply for speed
+  s = lapply(1:nsub, function(i) {
+#selects the parameters associated with the subject to be simulated
+    params <- params.all[i]
+#creates an eventTable with 7 doses every 24 hours
+    ev <- eventTable()
+    ev$add.dosing(
+      dose = params$AMT,
+      nbr.doses = 1,
+      dosing.to = 1,
+      rate = NULL,
+      start.time = 0
+    )
+#generates 4 random samples in a 24 hour period
+    ev$add.sampling(c(0, sort(round(sample(runif(600, 0, 1440), 4) / 60, 2))))
+#runs the RxODE simulation
+    x <- as.data.table(mod1$run(params, ev))
+#merges the parameters and ID number to the simulation output
+    x[, names(params) := params]
+  })
+  
+#runs the entire sequence of 10000 subjects and binds the results to the object res
+  res = as.data.table(do.call("rbind", s))
+  
+Stoplapply <- Sys.time()
+  
+Stoplapply - Startlapply
+  #10,000 subjects simulated in:
+  #Time difference of 43.23035 secs
+
+```
+
+Clean up the results and prepare for analysis using NONMEM:
+
+```{r clean_simulations}
+  setnames(res, "time", "TIME")
+#single administered dose:
+  Dose <- params.all
+  Dose[,TIME:=0]
+  Dose[, C2 := 0]
+  Dose[, EVID := 101]
+  Dose[, DOSE := AMT / 1000]
+  res[, EVID := 0]
+  res[, centr := NULL]
+  res[, abs := NULL]
+  res[, DOSE := AMT / 1000]
+  res[, AMT := 0]
+  res <- rbind(res, Dose)
+  setkey(res, ID, TIME)
+#Add residual error
+  res[, DV := C2 * exp(rnorm(length(C2), 0, sigma))]
+  res[, C2 := NULL]
+  res[, DV := round(DV)]
+#NONMEM EVID is just 1 instead of the RxODE EVID of 101
+  res[, EVIDNM := as.numeric(EVID == 101)]
+  res <- res[, .(ID, DOSE, V, CL, KA, TIME, EVID, AMT, DV, EVIDNM)]
+  write.table(res1,file="FullSIM180816_1.csv",sep=",",
+              col.names=TRUE,quote=FALSE,row.names=FALSE)
+```
+
+Then PsN is used to sample 120 subjects stratified by dose from the 10,000 subjects and analyse these with NONMEM. This is repeated 500 times using PsN bootstrap functionality, creating both 500 sets of output and 500 data files to be analysed using nlmixr with the following PsN syntax:
+
+```{}
+bootstrap -nm_version=nm743 runN024_1.mod -samples=500 -sample_size=120 -stratify_on=DOSE
+          -no-run_base_model -seed=12345 -threads=15  -keep_covariance -directory=runN024_1
+          
+```
+
+and the following NONMEM syntax file for FOCEi:
+```{}
+$PROB    ORAL1_1CPT_KAVCL MULTIPLE DOSE FOCEI runN024_1
+$INPUT   ID DOSE VI CLI KAI TIME EVIDNLMX AMT DV EVID
+$DATA    FullSIM180816_1.csv IGNORE=@
+$SUBR    ADVAN6 TOL=6
+$MODEL   COMP=(ABS,DEFDOSE) COMP=(CENTRAL,DEFOBS)
+$PK 
+    CL = EXP(THETA(1)+ETA(1))
+    V  = EXP(THETA(2)+ETA(2))
+    KA = EXP(THETA(3)+ETA(3))
+    S2 = V
+$DES  
+    DADT(1) = -KA*A(1)
+    DADT(2) =  KA*A(1)-CL*(A(2)/V)
+$ERROR    
+    IPRED = F     
+    RESCV = THETA(4) 
+    W     = IPRED*RESCV
+    IRES  = DV-IPRED
+    IWRES = IRES/W
+    Y     = IPRED+W*EPS(1)
+$THETA   1         ;CL
+$THETA   4         ;V
+$THETA   0.1       ;Ka
+$THETA   (0,0.2,1) ;RSV
+$OMEGA   0.2 0.2 0.2
+$SIGMA   1 FIX
+$EST     NSIG=2 SIGL=6 PRINT=5 MAX=9999 NOABORT POSTHOC METHOD=COND
+         INTER NOOBT
+$COV
+```
+
+If these 500 files are to be analysed using nlmixr, single core analysis would take a long time, but the analyses can be run in parallel under Windows using doParallel functionality. First the model needs to be defined and pre-compiled:
+
+```{r compile_ODE}
+one.compartment.oral.model <- function() {
+      ini({
+        # Where initial conditions/variables are specified
+        # '<-' or '=' defines population parameters
+        # Simple numeric expressions are supported
+        lCl <- 1        #log Cl (L/hr)
+        lVc <- 4        #log V (L)
+        lKA <- 0.1      #log Ka (/hr)
+        # Bounds may be specified by c(lower, est, upper), like NONMEM:
+        # Residuals errors are assumed to be population parameters
+        prop.err <- c(0, 0.2, 1)
+        # Between subject variability estimates are specified by '~'
+        # Semicolons are optional
+        eta.Cl ~ 0.2
+        eta.Vc ~ 0.2
+        eta.KA ~ 0.2
+      })
+      model({
+        # Where the model is specified
+        # The model uses the ini-defined variable names
+        Cl <- exp(lCl + eta.Cl)
+        Vc <- exp(lVc + eta.Vc)
+        KA <- exp(lKA + eta.KA)
+        # RxODE-style differential equations are supported
+        d / dt(depot)  = -KA * depot
+        d / dt(centr)  =  KA * depot - (Cl / Vc) * centr
+        ## Concentration is calculated
+        cp = centr / Vc
+        # And is assumed to follow proportional error estimated by prop.err
+        cp ~ prop(prop.err)
+      })
+}
+
+modX<-nlmixr(one.compartment.oral.model)
+```
+
+
+Then a function do_nlmixr is used that reads in the data file, runs the parameter estimation with the pre-compiled model, and then saves the output file, to be analysed at a later date.
+The code to analyse these data sets using FOCEI is:
+
+```{r FOCEI_ODE}
+do_nlmixrODE_FOCEi <- function(i,nmrun,dose) {
+    datr <-
+      read.csv(
+        paste("bs_pr1_", i, ".dta", sep = ""),
+        header = TRUE,
+        stringsAsFactors = F
+      )
+    
+    fit <-
+      nlmixr(
+        modX,
+        datr,
+        est = "focei",
+        control = foceiControl(cores=1,sigdig=3, 
+                               outerOpt= "nlminb",diagXform="sqrt",covGillF=TRUE)
+      )
+    save(fit, file = paste("fit_FOCEi_ODE_UUI_", i, dose,".Rdata", sep = ""))
+}
+
+```
+
+The code for SAEM with an ODE implementation is:
+
+```{r SAEM_ODE}
+  #SAEM with ODE:
+  
+  do_nlmixrODE_SAEM <- function(i,nmrun,dose) {
+    datr <-
+      read.csv(
+        paste("bs_pr1_", i, ".dta", sep = ""),
+        header = TRUE,
+        stringsAsFactors = F
+      )
+    
+    fit <-
+      nlmixr(
+        modX,
+        datr,
+        est = "saem",
+        control = saemControl(print = 50,n.burn=200,n.em=300)
+      )
+    
+    save(fit, file = paste("fit_SAEM_ODE_UUI_", i, dose,".Rdata", sep = ""))
+  }
+```
+
+To run these analyses in parallel, one needs to set up a local virtual cluster using the `doParallel` package, in this case with 15 cores, but adjust to your own hardware:
+
+```{r doParallel}
+  #install.packages("doParallel")  
+  library(doParallel)
+  cl <- makeCluster(7, outfile="")
+  registerDoParallel(cl)
+  #stopImplicitCluster()
+```
+
+And then run the 500 analyses using `foreach` syntax:
+
+```{r parallel_ODE_run}
+  nlmixr_out <-
+    foreach(i = 1:500, .packages = c('nlmixr')) %dopar% 
+            do_nlmixrODE_FOCEi(i,"runN024_1","_1")
+
+  nlmixrS_out <-
+    foreach(i = 1:500, .packages = c('nlmixr')) %dopar% 
+            do_nlmixrODE_SAEM(i,"runN024_1","_1")
+
+```
+
+You can then read in the output from the 500 nlmixr analyses. With the Unified User Interface, uniform storage is obtained for all estimation routines, and so a single read routine suffices.
+
+```{r Read_nlmixr}
+Read_nlmixr <- function(Identifier,Dose) {
+  for (i in 1:500) {
+    filename <- file.path('.',paste(Identifier, "_UUI_", i, Dose,".Rdata", sep = ""))
+    if (file.exists(filename)) {
+      load(filename)
+      TMSE <- as.numeric(fit$par.fixed$SE)
+      TM <- fit$theta
+      CovMatrix<-c("CovMatrix"=fit$covMethod)
+      if (length(TMSE)==0) {TMSE<-rep(NA,4)
+                            CovMatrix<-c("CovMatrix"="NA")}
+      names(TMSE) <- paste(names(TM), "_SE", sep = "")
+      OFV<-c("OFV"=fit$objDf$OBJF)
+      Time <- c("Time" = sum(fit$time))
+      IIV <- sqrt(diag(fit$omega))
+      run <- c("Run" = i)
+      MISSING_CWRES <- c("MISSING_CWRES" = sum(is.na(fit$CWRES)))
+      TM <- c(run, TM, TMSE, Time, IIV, MISSING_CWRES,OFV)
+      TM <- as.data.frame(t(TM))
+      TM$CovMatrix<-CovMatrix
+      fit <- NULL
+      print(i)
+      if (i == 1) {
+        nlmixrpars <<- TM
+      } else{
+        nlmixrpars <<- rbind(nlmixrpars, TM)
+      }
+    }
+  }
+  save(nlmixrpars, file = paste(Identifier,Dose, ".Rdata", sep = ""))
+}
+
+Read_nlmixr(Identifier = "fit_FOCEi_ODE",Dose="_1")
+
+Read_nlmixr(Identifier = "fit_SAEM_ODE",Dose="_1")
+```
+
+Read in the NONMEM results
+
+```{r Read_NONMEM}
+datNM <-
+  fread(
+    "./fit_NONMEM_ODE/raw_results_runN024ode_1.csv",
+    header = TRUE,
+    stringsAsFactors = F
+  )
+datNM <- datNM[-1]
+datNM[, Run := model]
+setnames(datNM,
+         c("OMEGA(1,1)", "OMEGA(2,2)", "OMEGA(3,3)"),
+         c("OM_CL", "OM_V", "OM_KA"))
+datNM[, IIV_CL := sqrt(OM_CL)]
+datNM[, IIV_V := sqrt(OM_V)]
+datNM[, IIV_KA := sqrt(OM_KA)]
+datNM[, NM_Time := (subprob_est_time+subprob_cov_time)]
+save(datNM, file = "fit_NMFOCEI_743.Rdata")
+dim(datNM)
+#[1] 500  53
+
+```
+
+
+Read in the Monolix results
+
+```{r Read_Monolix}
+Read_Monolix <- function(MFiles,MLXFiles) {
+  for (i in 1:500) {
+    filename <- MFiles[i]
+    if (file.exists(filename)) {
+      fit<-fread(filename,stringsAsFactors=FALSE)
+      TMSE <- fit$se_sa
+      TM <- fit$value
+      names(TM) <- fit$parameter
+      names(TMSE) <- paste(fit$parameter, "_SE", sep = "")
+      listfile <- scan(MLXFiles[i], sep = "\n", what = character(),quiet=TRUE, quote = "")	
+      Run<-as.numeric(unlist(strsplit(unlist(strsplit(unlist(strsplit(listfile[3],'/'))[4],"_"))[3],"\\."))[1])
+      run <- c("Run" = Run)
+      TM <- c(run, TM, TMSE)
+      TM <- as.data.frame(t(TM))
+      fit <- NULL
+      print(paste(i,Run))
+      if (i == 1) {
+        Monolixpars <<- TM
+      } else{
+        Monolixpars <<- rbind(Monolixpars, TM)
+      }
+    }
+  }
+  save(Monolixpars, file = "Monolix_sparse.Rdata")
+}
+
+MLXFiles<-  dir (".",pattern='.mlxtran',recursive=TRUE,full.name=TRUE)
+MFiles<-  dir (".",pattern='populationParameters.txt',recursive=TRUE,full.name=TRUE)
+Read_Monolix(MFiles,MLXFiles)
+
+```
+
+The nlmixr results can then be compared with the Monolix and NONMEM output and plotted to see the results. First we have the comparison of nlmixr/FOCEI results and NONMEM/FOCEI estimates. Each marker is a single paired data set result for NONMEM/FOCEI on the x-axis and nlmixr/FOCEI on the y-axis (Figure \ref{fig:fig1}). Results for thetas are highly correlated (r=1.00) (top row), and lie on the line of identity (diagonal black line). The median estimate for CL across the 500 data sets (the red lines) is higher than the value used for simulation (the blue dotted lines), but this is the same for NONMEM/FOCEI (2.8%) and nlmixr/FOCEI (2.9%). Theta estimates of Vc and ka show the same near-perfect correspondence. Inter-individual variability (IIV) estimates (Figure \ref{fig:fig1}, middle row) are also highly correlated, but for ka, values close zero are estimated for NONMEM/FOCEI (7.8%), but not for nlmixr/FOCEI. Standard errors (SEs, (Figure \ref{fig:fig1}, bottom row) are also highly correlated, with some outliers for NONMEM/FOCEI.
+
+Results for the comparison between Monolix/SAEM and nlmixr/SAEM are provided in Figure \ref{fig:fig2}.
+
+![Sparse data analysis results for NONMEM/FOCEI vs. nlmixr/FOCEI
+Clearance (CL, left column), central volume (Vc, middle column), and absorption rate contant (ka, right column), for population typical parameters (top row), their inter individual variability (IIV, middle row), and the standard error (SE) of their log estimate (bottom row). Dark blue markers: individual paired outcomes for each of the 500 analyses; red lines: median estimated parameter value; blue dotted lines: reference used in simulation or bootstrapped standard error of log Theta (bottom row); black diagonal lines: line of identity.\label{fig:fig1}](.\\TablesAndFigures\\FOCEI_ODE.png)
+
+![Sparse data analysis results for Monolix/SAEM vs. nlmixr/SAEM
+Clearance (CL, left column), central volume (Vc, middle column), and absorption rate contant (ka, right column), for population typical parameters (top row), their inter individual variability (IIV, middle row), and the standard error (SE) of their log estimate (bottom row). Dark blue markers: individual paired outcomes for each of the 500 analyses; red lines: median estimated parameter value; blue dotted lines: reference used in simulation or bootstrapped standard error of log Theta (bottom row); black diagonal lines: line of identity. \label{fig:fig2}](.\\TablesAndFigures\\MonoSAEM_ODE1.png)

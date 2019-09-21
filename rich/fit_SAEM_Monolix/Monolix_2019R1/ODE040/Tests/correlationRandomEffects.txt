@@ -1,0 +1,11 @@
+eta1,eta2,coeff,statistics,p-value
+eta_logV1,eta_logQ,0,-0.576849,0.565131
+eta_logV1,eta_logV2,0,-0.281365,0.778919
+eta_logV1,eta_logVm,0,1.00729,0.315837
+eta_logV1,eta_logKm,0,0.394708,0.693765
+eta_logQ,eta_logV2,0,-0.16898,0.866099
+eta_logQ,eta_logVm,0,0.0523223,0.95836
+eta_logQ,eta_logKm,0,0.116431,0.907508
+eta_logV2,eta_logVm,0,1.03721,0.301739
+eta_logV2,eta_logKm,0,0.576313,0.565492
+eta_logVm,eta_logKm,0,-0.0954955,0.924082
