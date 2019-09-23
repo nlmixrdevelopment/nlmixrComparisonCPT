@@ -1,0 +1,1 @@
+C:\Perl64\bin/bootstrap -nm_version=nm743 runN024_1.mod -samples=500 -sample_size=120 -stratify_on=DOSE -no-run_base_model -seed=12345 -threads=15 -directory=runN024_1

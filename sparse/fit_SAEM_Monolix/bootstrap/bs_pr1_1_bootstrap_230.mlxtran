@@ -1,0 +1,58 @@
+<DATAFILE>
+
+[FILEINFO]
+file = '../../Data/bs_pr1_305.csv'
+delimiter = comma
+header = {ID, DOSE, V, CL, KA, TIME, EVID, AMT, DV, EVIDNM}
+
+[CONTENT]
+ID = {use=identifier}
+TIME = {use=time}
+AMT = {use=amount}
+DV = {use=observation, name=DV, type=continuous}
+EVIDNM = {use=eventidentifier}
+
+<MODEL>
+
+[INDIVIDUAL]
+input = {logka_pop, omega_logka, logV_pop, omega_logV, logCl_pop, omega_logCl}
+
+DEFINITION:
+logka = {distribution=normal, typical=logka_pop, sd=omega_logka}
+logV = {distribution=normal, typical=logV_pop, sd=omega_logV}
+logCl = {distribution=normal, typical=logCl_pop, sd=omega_logCl}
+
+[LONGITUDINAL]
+input = {b}
+
+file = '../../../../../../../ProgramData/Lixoft/MonolixSuite2018R2/factory/library/Users/oral1_1cpt_ODE_logkalogVlogCl.txt'
+
+DEFINITION:
+DV = {distribution=normal, prediction=Cc, errorModel=proportional(b)}
+
+<FIT>
+data = DV
+model = DV
+
+<PARAMETER>
+b = {value=0.3, method=MLE}
+logCl_pop = {value=1.5, method=MLE}
+logV_pop = {value=4.5, method=MLE}
+logka_pop = {value=0.01, method=MLE}
+omega_logCl = {value=0.1, method=MLE}
+omega_logV = {value=0.1, method=MLE}
+omega_logka = {value=0.1, method=MLE}
+
+<MONOLIX>
+
+[TASKS]
+populationParameters()
+individualParameters(run = false,method = none )
+fim(run = false,method = StochasticApproximation)
+logLikelihood(run = false,method = ImportanceSampling)
+plotResult(run = false,method = {outputplot, indfits, obspred, parameterdistribution, covariatemodeldiagnosis, randomeffects, covariancemodeldiagnosis, saemresults })
+
+[SETTINGS]
+GLOBAL:
+exportpath = 'bs_pr1_1_bootstrap_230'
+
